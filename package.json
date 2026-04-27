@@ -1,0 +1,15 @@
+{
+  "name": "experience_url_shortener",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240903.0",
+    "typescript": "^5.5.2",
+    "wrangler": "^4.84.1"
+  }
+}
