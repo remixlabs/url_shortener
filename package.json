@@ -1,15 +1,24 @@
 {
-  "name": "experience_url_shortener",
+  "name": "url-shortener",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "setup": "bash scripts/setup.sh",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "deploy": "npm test && npm run typecheck && wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "secret": "bash scripts/set-secret.sh"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240903.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260924.1",
     "typescript": "^5.5.2",
-    "wrangler": "^4.84.1"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.137.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
   }
 }

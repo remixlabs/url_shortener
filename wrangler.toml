@@ -1,3 +1,9 @@
-name = "experience_url_shortener"
+name = "url-shortener"
 main = "src/index.ts"
-compatibility_date = "2024-09-03"
+compatibility_date = "2025-09-01"
+
+# The Cloudflare account is set via CLOUDFLARE_ACCOUNT_ID in .env.
+# No namespace id: the first deploy creates it, and later deploys reuse the
+# namespace already bound to the deployed worker.
+[[kv_namespaces]]
+binding = "URLS"

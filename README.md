@@ -1,34 +1,50 @@
-# experience_url_shortener
+# url-shortener
 
-A Cloudflare Worker that shortens long experience URLs for use in SMS/RCS messages. Optionally supports passing an external identifier through the short URL path, which is appended to the destination URL as a query parameter for downstream use.
+A Cloudflare Worker URL shortener backed by Cloudflare KV.
 
-## Prerequisites
+## Deployment
 
-- [Node.js](https://nodejs.org)
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up)
-- Wrangler authenticated: `npx wrangler login`
+Live at **https://url-shortener.remixlabs.workers.dev**.
 
-## Setup
+Cloudflare IDs are kept out of the repo. Create a `.env` in the project root (it's git-ignored):
 
-```bash
-npm install
-npm run setup
+```
+CLOUDFLARE_ACCOUNT_ID=<your account id>
+SECRET=<written by npm run secret>
 ```
 
-`npm run setup` does the following in one command:
-
-1. Creates a KV namespace in your Cloudflare account to store shortened URLs
-2. Updates `wrangler.toml` with the namespace ID
-3. Generates a random secret, saves it to `.env`, and uploads it to Cloudflare as a Worker secret — used to authenticate `POST /shorten`
-4. Deploys the Worker
-5. Runs smoke tests against the live deployment to verify everything works
-
-The secret is saved to `.env` — keep this file safe and do not commit it.
-
-To use a custom KV namespace name (default is `experience_urls`):
+`npx wrangler whoami` lists the accounts you can use.
 
 ```bash
-npm run setup -- my_namespace
+nvm use              # Node 24 (see .nvmrc)
+npm install
+npx wrangler login   # once per machine
+npm run deploy       # runs tests + typecheck, then deploys
+```
+
+The KV namespace (`url-shortener-urls`) isn't pinned in `wrangler.toml`: the first deploy created it, and every deploy since reuses the namespace bound to the live worker. Don't delete or rename the worker — a fresh worker gets a new, empty namespace.
+
+Give your calling systems two values: the worker URL and the `SECRET` from `.env`. Keep `.env` out of git (it's already in `.gitignore`). If you don't have the `SECRET` on a new machine, run `npm run secret` to issue a new secret (this replaces the old one, so update your calling systems).
+
+Check it's working:
+
+```bash
+source .env
+curl -X POST https://url-shortener.remixlabs.workers.dev/shorten \
+  -H "Authorization: Bearer $SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+```
+
+To manage keys directly, look up the namespace id with `npx wrangler kv namespace list` and pass `--namespace-id <id> --remote` to `wrangler kv key` commands.
+
+Note: KV is eventually consistent, so overwriting or deleting a key can take up to ~60s to take effect everywhere. New links work immediately.
+
+## Redeploy / rotate the secret
+
+```bash
+npm run deploy   # after code changes
+npm run secret   # rotate: generates a new secret; update your calling systems with it
 ```
 
 ## Development
@@ -37,21 +53,17 @@ npm run setup -- my_namespace
 npm run dev
 ```
 
-## Deploy
+`wrangler dev` uses a local KV namespace and reads `SECRET` from `.env`.
 
-To redeploy after making changes:
-
-```bash
-npm run deploy
-```
-
-To rotate the secret:
+## Testing
 
 ```bash
-npx wrangler secret put SECRET
+npm test            # run once
+npm run test:watch  # rerun on change
+npm run typecheck
 ```
 
-Then update the value in `.env` manually.
+Tests run inside the Workers runtime (via `@cloudflare/vitest-pool-workers`) against a local, in-memory KV namespace — no Cloudflare account needed.
 
 ## API
 
@@ -60,12 +72,12 @@ Then update the value in `.env` manually.
 ```
 POST /shorten
 Content-Type: application/json
-Authorization: Bearer <your-secret>
+Authorization: Bearer <SECRET>
 
 { "url": "https://example.com/some/long/path?foo=bar" }
 ```
 
-Response:
+Response (`201`):
 
 ```json
 {
@@ -81,20 +93,26 @@ Response:
 GET /:code
 ```
 
-Redirects to the stored URL.
+Responds with a `302` redirect to the stored URL, or `404` if the code is unknown.
 
-### Redirect with external identifier
+## Calling from your systems
 
+Any HTTP client works. Example in TypeScript/JavaScript:
+
+```ts
+async function shortenUrl(url: string): Promise<string> {
+  const res = await fetch(`${process.env.SHORTENER_URL}/shorten`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.SHORTENER_SECRET}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(`Shorten failed: ${res.status} ${await res.text()}`);
+  const { short_url } = (await res.json()) as { short_url: string };
+  return short_url;
+}
 ```
-GET /:code/:params_key
-```
 
-Redirects to the stored URL with `_rmx_params_key={params_key}` appended as a query parameter. The destination page can use this value for any downstream integration.
-
-**Example:**
-
-Short URL stored as `aB3xYz12` → `https://example.com/experience?screen=home`
-
-User opens `https://your-worker.workers.dev/aB3xYz12/user_abc`
-
-Redirected to `https://example.com/experience?screen=home&_rmx_params_key=user_abc`
+Errors are JSON `{ "error": "..." }` with status `400` (bad input), `401` (bad/missing secret), or `500`.
